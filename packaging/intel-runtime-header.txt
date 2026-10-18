@@ -1,0 +1,23 @@
+Intel OpenMP / oneMKL — component-specific end-user terms
+
+These terms apply only to the included Intel libiomp5md.dll runtime and Intel's own
+oneMKL portions inside CTranslate2. OpenMP follows the Intel Developer Tools EULA;
+oneMKL follows the separately reproduced Intel Simplified Software License.
+They do not change Look to Ask's MIT license or restrict
+your rights to inspect, modify, replace or debug Qt, FFmpeg or other LGPL libraries.
+Separately licensed open-source portions follow their own licenses, as specified
+in section 2.2 of the complete Intel license below and the accompanying notices.
+
+The Intel runtime is redistributed only as part of Look to Ask. By installing or
+using this Intel binary, you agree to the applicable Intel end-user terms below,
+including not reverse engineering, decompiling or disassembling Intel's binary
+code except as allowed by applicable law or its separately licensed open-source
+terms. Intel's exclusions and limitations of liability in section 7 of the full
+license below apply to Intel and must be conveyed to downstream recipients.
+No Intel endorsement, support obligation or indemnity is represented or promised.
+
+Full, unmodified Intel vendor license follows. Preserve it, fredist.txt and the
+third-party notices with this component when copying the binary distribution.
+
+======================================================================
+

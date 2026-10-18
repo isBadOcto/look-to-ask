@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "look-to-ask"
+version = "0.4.6"
+description = "Gaze tracking and active screen questions for Windows — Look at anything, ask anything."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+dependencies = [
+  "av==17.1.0",
+  "cv2-enumerate-cameras==1.4.0",
+  "faster-whisper==1.2.1",
+  "mediapipe==0.10.32",
+  "numpy==1.26.4",
+  "opencv-contrib-python==4.11.0.86",
+  "PySide6-Essentials==6.8.3",
+  "scikit-learn==1.6.1",
+  "scipy==1.15.3",
+  "screeninfo==0.8.1",
+  "sounddevice==0.5.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<10", "ruff>=0.12,<1", "pip-licenses>=5,<6"]
+build = ["pyinstaller==6.22.3"]
+
+[project.scripts]
+look-to-ask = "look_to_ask.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"look_to_ask" = ["assets/*.svg", "translations/*.ts", "translations/*.qm"]
+"look_to_ask._vendor.eyetrax" = ["LICENSE", "UPSTREAM.md", "manifest.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["src/look_to_ask/_vendor/eyetrax"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

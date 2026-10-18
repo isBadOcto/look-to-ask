@@ -1,0 +1,73 @@
+{
+  "repository": "https://github.com/ck-zhang/EyeTrax",
+  "commit": "84e13a16af168ac7c383f7d50ec901cd6c0ad61d",
+  "version": "0.4.0",
+  "files": [
+    {
+      "path": "gaze.py",
+      "upstream_path": "src/eyetrax/gaze.py",
+      "upstream_sha256": "920738d4b485ab67ba23c6b249afb03094e7cf66f5011aa7fb72ae22915a27c2",
+      "local_sha256": "963a137bddafc59812f9a9b69250954da57e4297f192567cc8bd50ebcd686345"
+    },
+    {
+      "path": "constants.py",
+      "upstream_path": "src/eyetrax/constants.py",
+      "upstream_sha256": "41013cebeb14a6325d96f33019ece3a95d2978c539595a052a49e5e6b1ab7bb9",
+      "local_sha256": "41013cebeb14a6325d96f33019ece3a95d2978c539595a052a49e5e6b1ab7bb9"
+    },
+    {
+      "path": "models/__init__.py",
+      "upstream_path": "src/eyetrax/models/__init__.py",
+      "upstream_sha256": "7d2db8f4cbcc3a69973f5afd302af7ed7044335040fe56f9e7a6426a9f7f1ad6",
+      "local_sha256": "7d2db8f4cbcc3a69973f5afd302af7ed7044335040fe56f9e7a6426a9f7f1ad6"
+    },
+    {
+      "path": "models/base.py",
+      "upstream_path": "src/eyetrax/models/base.py",
+      "upstream_sha256": "bb6023e7d718da20d64d754af000b2db72e5ce26ff752502a4bcf67ed20322f9",
+      "local_sha256": "bb6023e7d718da20d64d754af000b2db72e5ce26ff752502a4bcf67ed20322f9"
+    },
+    {
+      "path": "models/ridge.py",
+      "upstream_path": "src/eyetrax/models/ridge.py",
+      "upstream_sha256": "2dca5a7c420d32abf376d71e2ec3d30a394482ac0a7d243adcf2194c9362ee40",
+      "local_sha256": "2dca5a7c420d32abf376d71e2ec3d30a394482ac0a7d243adcf2194c9362ee40"
+    },
+    {
+      "path": "filters/__init__.py",
+      "upstream_path": "src/eyetrax/filters/__init__.py",
+      "upstream_sha256": "16c1e410b0d411eed15153ad32caf9c7a7be6236746616c27915d987a3489fd6",
+      "local_sha256": "4e3c174282f96b936628513f75e6fae4dfcbb791a934e8592a4f0f439ba1b8e7"
+    },
+    {
+      "path": "filters/base.py",
+      "upstream_path": "src/eyetrax/filters/base.py",
+      "upstream_sha256": "835c6e6fc5ccfc3a905d56374a9e58dbbc42b06344702f604f711c57d7cde81d",
+      "local_sha256": "835c6e6fc5ccfc3a905d56374a9e58dbbc42b06344702f604f711c57d7cde81d"
+    },
+    {
+      "path": "filters/kalman.py",
+      "upstream_path": "src/eyetrax/filters/kalman.py",
+      "upstream_sha256": "a0fc5cb67a5a3c2c22f1e85e96bb1cfa02db335000154a0172a985a1a36bbb65",
+      "local_sha256": "3af3e8fc5f0eba5c62fa830a9f98fdf67e0ba048fd522733fe1e6ed5533f1797"
+    },
+    {
+      "path": "filters/kalman_ema.py",
+      "upstream_path": "src/eyetrax/filters/kalman_ema.py",
+      "upstream_sha256": "385024df3d2d6982164400cdb26b7ab0f4635a848ece9292a8a451c838b8c0dd",
+      "local_sha256": "385024df3d2d6982164400cdb26b7ab0f4635a848ece9292a8a451c838b8c0dd"
+    },
+    {
+      "path": "utils/screen.py",
+      "upstream_path": "src/eyetrax/utils/screen.py",
+      "upstream_sha256": "090f68a5f7b533f3bfaa57043409703a7282c0ed09d36438be380ff84f57a49b",
+      "local_sha256": "090f68a5f7b533f3bfaa57043409703a7282c0ed09d36438be380ff84f57a49b"
+    },
+    {
+      "path": "utils/video.py",
+      "upstream_path": "src/eyetrax/utils/video.py",
+      "upstream_sha256": "ce5e472e9ec1b003c4746e9ff77c3587e3fc6558dd4f05cfff7bfd39dfdbe102",
+      "local_sha256": "ce5e472e9ec1b003c4746e9ff77c3587e3fc6558dd4f05cfff7bfd39dfdbe102"
+    }
+  ]
+}
