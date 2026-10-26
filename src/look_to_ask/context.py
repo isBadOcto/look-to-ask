@@ -65,6 +65,24 @@ class GazeState:
             "spread_px": round(spread, 1),
         }
 
+    def freeze_recent(self, screen, *, now):
+        """Freeze real recent predictions without rejecting webcam jitter."""
+        latest = self.freeze(screen, now=now)
+        points = [
+            s[:2]
+            for s in self.history
+            if 0 <= now - s[2] <= 0.25
+            and screen.x <= s[0] < screen.x + screen.width
+            and screen.y <= s[1] < screen.y + screen.height
+        ]
+        values = np.asarray(points or [latest])
+        point = np.median(values, axis=0)
+        spread = float(np.quantile(np.linalg.norm(values - point, axis=1), 0.9))
+        return tuple(float(v) for v in point), {
+            "gaze_samples": len(values),
+            "spread_px": round(spread, 1),
+        }
+
 
 @dataclass(frozen=True)
 class ContextGeometry:
@@ -143,7 +161,7 @@ def encode_png(image):
     return bytes(buffer.data())
 
 
-def capture_primary(screen, gaze_global):
+def capture_primary(screen, gaze_global, *, builder=build_context):
     """Called on the GUI thread only, after the app has hidden its own windows."""
     primary = QGuiApplication.primaryScreen()
     if primary is None:
@@ -163,8 +181,18 @@ def capture_primary(screen, gaze_global):
     # multiplying the coordinates by DPR again would incorrectly double-scale.
     dpr = pixmap.devicePixelRatio()
     if (
-        abs(pixmap.width() - screen.width * dpr) > 2
+        not math.isfinite(dpr)
+        or dpr <= 0
+        or abs(pixmap.width() - screen.width * dpr) > 2
         or abs(pixmap.height() - screen.height * dpr) > 2
     ):
         raise ValueError(tr("截图尺寸与主屏 DPI 不一致；拒绝分析可能错位的内容。"))
-    return build_context(pixmap.toImage(), screen, gaze_global)
+    current = primary.geometry()
+    if primary != QGuiApplication.primaryScreen() or (
+        current.x(),
+        current.y(),
+        current.width(),
+        current.height(),
+    ) != (screen.x, screen.y, screen.width, screen.height):
+        raise ValueError(tr("主屏或缩放已改变；请重启并重新校准。"))
+    return builder(pixmap.toImage(), screen, gaze_global)

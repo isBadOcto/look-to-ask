@@ -26,10 +26,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from look_to_ask.codex_handoff import CodexClient, CodexConfig
 from look_to_ask.context import GazeState, capture_primary
 from look_to_ask.i18n import tr
 from look_to_ask.notices import license_text
 from look_to_ask.platform_windows import flush_compositor
+from look_to_ask.screen_context import capture_screen_context
 from look_to_ask.settings import AppSettings, credential_target
 from look_to_ask.vision import ApiConfig, VisionClient
 
@@ -71,6 +73,7 @@ class DiagnosticLog:
         "answer_chars",
         "code",
         "stable_samples",
+        "gaze_samples",
         "spread_px",
         "audio_ms",
         "asr_ms",
@@ -183,6 +186,7 @@ class AskDialog(QDialog):
     send_requested = Signal(object, str)
     cancel_requested = Signal()
     save_settings_requested = Signal()
+    check_codex_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -204,11 +208,9 @@ class AskDialog(QDialog):
         layout.addWidget(self.status_label)
         self.preview = ContextPreview()
         layout.addWidget(self.preview)
-        hint = QLabel(
-            tr("粉色准星＝冻结的注视点；黄色框＝近邻小图。标记仅用于预览，不会覆盖上传原图。")
-        )
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        self.preview_hint = QLabel()
+        self.preview_hint.setWordWrap(True)
+        layout.addWidget(self.preview_hint)
         self.question_edit = QPlainTextEdit()
         self.question_edit.setPlaceholderText(
             tr("输入文字问题，例如：这个是什么意思？为什么这里报错？")
@@ -242,6 +244,20 @@ class AskDialog(QDialog):
         self.tabs.addTab(self.answer_view, tr("回答"))
         settings = QWidget()
         form = QFormLayout(settings)
+        self.destination_selector = QComboBox()
+        self.destination_selector.addItem(tr("多模态 API（现有模式）"), "api")
+        self.destination_selector.addItem(tr("Codex 桌面对话（无需 API Key）"), "codex")
+        form.addRow(tr("发送目标"), self.destination_selector)
+        self.codex_thread_edit = QLineEdit()
+        self.codex_thread_edit.setPlaceholderText("codex://threads/…")
+        form.addRow(tr("Codex 接收对话链接"), self.codex_thread_edit)
+        self.codex_executable_edit = QLineEdit()
+        self.codex_executable_edit.setPlaceholderText(tr("留空自动查找桌面版自带的 codex.exe"))
+        form.addRow(tr("Codex 程序路径（可选）"), self.codex_executable_edit)
+        self.check_codex_button = QPushButton(tr("检查 Codex 对话（不截图、不发送）"))
+        self.check_codex_button.setAutoDefault(False)
+        self.check_codex_button.clicked.connect(self.check_codex_requested.emit)
+        form.addRow(self.check_codex_button)
         config = ApiConfig.from_env()
         self.base_url_edit = QLineEdit(config.base_url)
         self.model_edit = QLineEdit(config.model)
@@ -299,8 +315,22 @@ class AskDialog(QDialog):
         copy.clicked.connect(lambda: QApplication.clipboard().setText(self.log_view.toPlainText()))
         layout.addWidget(copy)
         self.base_url_edit.textChanged.connect(self._disclose)
+        self.destination_selector.currentIndexChanged.connect(self._destination_changed)
         self._key_endpoint = self._endpoint_identity()
         self.base_url_edit.textChanged.connect(self._endpoint_changed)
+        self._destination_changed()
+
+    def _destination_changed(self):
+        codex = self.destination_selector.currentData() == "codex"
+        self.preview_hint.setText(
+            tr("Codex 概览图包含局部位置框和近似注视标记；局部图保持原像素、无标记。")
+            if codex
+            else tr("粉色准星＝冻结的注视点；黄色框＝近邻小图。标记仅用于预览，不会覆盖上传原图。")
+        )
+        for field in (self.codex_thread_edit, self.codex_executable_edit, self.check_codex_button):
+            field.setEnabled(codex)
+        for field in (self.base_url_edit, self.model_edit, self.key_edit, self.remember_key):
+            field.setEnabled(not codex)
         self._disclose()
 
     def _endpoint_identity(self):
@@ -321,6 +351,16 @@ class AskDialog(QDialog):
         self._key_endpoint = endpoint
 
     def _disclose(self):
+        if self.destination_selector.currentData() == "codex":
+            self.disclosure.setText(
+                tr(
+                    "Codex 模式：主动触发后截取整张主屏概览和注视局部图；"
+                    "语音松开后自动交给绑定的 Codex 对话，无需 API Key。"
+                    "两图和问题会进入 Codex 队列及聊天历史，遵循其账号设置；"
+                    "录音仅本地识别。本应用不发通知、不读取回答。"
+                )
+            )
+            return
         try:
             host = urlsplit(self.base_url_edit.text()).hostname or tr("尚未填写的接口")
         except ValueError:
@@ -338,9 +378,23 @@ class AskDialog(QDialog):
     def api_config(self):
         return ApiConfig(self.base_url_edit.text(), self.model_edit.text(), self.key_edit.text())
 
+    def destination_config(self):
+        if self.destination_selector.currentData() == "codex":
+            return CodexConfig(
+                self.codex_thread_edit.text(), self.codex_executable_edit.text().strip()
+            ).validate()
+        config = self.api_config()
+        _ = config.endpoint
+        return config
+
     def _send(self):
+        try:
+            config = self.destination_config()
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
         self.send_requested.emit(
-            self.api_config(),
+            config,
             self.question_edit.toPlainText(),
         )
 
@@ -382,30 +436,79 @@ class AskController(QObject):
         self.delay_ms = delay_ms
         self.dialog = AskDialog()
         self.client = VisionClient(self)
+        self.codex_client = CodexClient(self)
+        self.screen_capture_factory = capture_screen_context
+        self.last_capture_error = None
+        self._capture_destination = "api"
+        self._control_was_visible = False
         self.log = DiagnosticLog()
         self.pending = False
         self.reserved = False
         self._generation = 0
         self._shutting_down = False
         self._request_id = None
+        self._request_outcome = None
         self._started = 0.0
         self.dialog.send_requested.connect(self._send)
-        self.dialog.cancel_requested.connect(self.client.cancel)
+        self.dialog.cancel_requested.connect(self.cancel_requests)
+        self.dialog.check_codex_requested.connect(self.check_codex)
         self.dialog.finished.connect(self._closed)
         self.client.completed.connect(self._answered)
         self.client.failed.connect(self._failed)
+        self.codex_client.completed.connect(self._codex_submitted)
+        self.codex_client.failed.connect(self._failed)
+        self.codex_client.checked.connect(self._codex_checked)
+
+    @property
+    def background(self):
+        return bool(getattr(getattr(self.window, "tray", None), "background", False))
+
+    @property
+    def busy(self):
+        return self.client.busy or self.codex_client.busy
+
+    def cancel_requests(self):
+        self.client.cancel()
+        self.codex_client.cancel()
+
+    def check_codex(self):
+        if self.pending or self.reserved or self.busy:
+            return
+        try:
+            config = CodexConfig(
+                self.dialog.codex_thread_edit.text(),
+                self.dialog.codex_executable_edit.text().strip(),
+            ).validate()
+            self.dialog.status_label.setText(tr("正在检查 Codex 接收对话…"))
+            self.codex_client.check(config)
+        except ValueError as exc:
+            self.dialog.status_label.setText(str(exc))
+
+    def _codex_checked(self, title):
+        self.dialog.status_label.setText(tr("Codex 接收对话可用：{value0}", value0=title))
+
+    def _restore_control(self):
+        if self._shutting_down or self.window._closing:
+            return
+        tray = getattr(self.window, "tray", None)
+        if self.background:
+            if not tray.available:
+                self.window.showMinimized()
+        elif self._control_was_visible:
+            self.window.show()
 
     @property
     def suppress_marker(self):
-        return self.pending or self.dialog.isVisible()
+        return self.background or self.pending or self.dialog.isVisible()
 
     def _record(self, event, **fields):
         self.log.record(event, **fields)
         self.dialog.log_view.setPlainText(self.log.text)
 
-    def trigger(self, *, frozen_point=None, voice=False):
+    def trigger(self, *, frozen_point=None, voice=False, destination=None):
+        self.last_capture_error = None
         w = self.window
-        if self.pending or self.client.busy or (self.reserved and not voice):
+        if self.pending or self.busy or (self.reserved and not voice):
             w._set_status(tr("已有截图或 AI 请求，请等待或在问答窗口取消。"))
             return
         if (
@@ -426,7 +529,9 @@ class AskController(QObject):
         except ValueError as exc:
             w._set_status(str(exc))
             return
+        self._capture_destination = destination or self.dialog.destination_selector.currentData()
         self.pending = True
+        self._control_was_visible = w.isVisible() and not w.isMinimized()
         self.reserved = voice
         self._generation += 1
         generation = self._generation
@@ -450,16 +555,21 @@ class AskController(QObject):
             if any(widget.isVisible() for widget in QApplication.topLevelWidgets()):
                 raise ValueError(tr("截图期间应用窗口重新出现；请再次触发。"))
             flush_compositor()
-            snapshot = self.capture_factory(self.window.screen, point)
+            snapshot = (
+                self.screen_capture_factory(self.window.screen, point)
+                if self._capture_destination == "codex"
+                else self.capture_factory(self.window.screen, point)
+            )
         except Exception as exc:
             self.pending = False
-            self.window.show()
+            self._restore_control()
             self._record("capture_failed", code="capture_failed")
-            self.window._set_status(
+            self.last_capture_error = (
                 str(exc)
                 if isinstance(exc, ValueError)
                 else tr("截图失败；请检查当前桌面是否允许捕获。")
             )
+            self.window._set_status(self.last_capture_error)
             self.capture_failed.emit()
             return
         self.pending = False
@@ -477,7 +587,7 @@ class AskController(QObject):
             elapsed_ms=round((time.monotonic() - started) * 1000),
         )
         self.dialog.set_context(snapshot)
-        self.window.show()
+        self._restore_control()
         if not self.reserved:
             self.dialog.show()
             self.dialog.raise_()
@@ -489,22 +599,44 @@ class AskController(QObject):
 
     def _send(self, config, question, *, voice=False):
         snapshot = self.dialog.snapshot
-        if snapshot is None or self.pending or self.client.busy or (self.reserved and not voice):
+        if snapshot is None or self.pending or self.busy or (self.reserved and not voice):
+            return False
+        codex = isinstance(config, CodexConfig)
+        if codex != (self._capture_destination == "codex"):
+            self.dialog.status_label.setText(tr("发送方式已改变；请重新触发截图。"))
             return False
         self._request_id, self._started = snapshot.capture_id, time.monotonic()
+        self._request_outcome = None
+        self.dialog.set_busy(True)
+        self.dialog.answer_view.clear()
+        self.dialog.status_label.setText(
+            tr("正在交给 Codex…入队后无法撤回，请在目标对话查看。")
+            if codex
+            else tr("正在请求 AI…可取消；不会继续截屏或追随新的注视点。")
+        )
+        self._record("send_started", capture_id=snapshot.capture_id)
         try:
-            self.client.send(config, snapshot, question)
+            client = self.codex_client if codex else self.client
+            client.send(config, snapshot, question)
         except ValueError as exc:
+            self._request_outcome = "failed"
+            self.dialog.set_busy(False)
             self.dialog.status_label.setText(str(exc))
             self._record("send_rejected", capture_id=snapshot.capture_id, code="invalid_settings")
             return False
-        self.dialog.set_busy(True)
-        self.dialog.answer_view.clear()
-        self.dialog.status_label.setText(tr("正在请求 AI…可取消；不会继续截屏或追随新的注视点。"))
-        self._record("send_started", capture_id=snapshot.capture_id)
-        return True
+        return self._request_outcome != "failed"
+
+    def _codex_submitted(self, _queue_id):
+        self._request_outcome = "completed"
+        self._record("send_started", capture_id=self._request_id, code="codex_queued")
+        self.dialog.set_context(None)
+        self.dialog.set_busy(False)
+        message = tr("已交给 Codex 对话；若正在处理其他任务，会进入后续队列。")
+        self.dialog.status_label.setText(message)
+        self.window._set_status(message)
 
     def _answered(self, answer):
+        self._request_outcome = "completed"
         self._record(
             "api_success",
             capture_id=self._request_id,
@@ -520,6 +652,7 @@ class AskController(QObject):
         self.dialog.set_busy(False)
 
     def _failed(self, message, code):
+        self._request_outcome = "failed"
         self._record(
             "api_failed",
             capture_id=self._request_id,
@@ -529,28 +662,29 @@ class AskController(QObject):
         if self.dialog.snapshot is not None:
             self.dialog.status_label.setText(message)
         self.dialog.set_busy(False)
+        self.window._set_status(message)
 
     def _closed(self, _result):
-        self.client.cancel()
+        self.cancel_requests()
         self.dialog.set_context(None)
         self._record("context_closed")
         self.invalidated.emit("context_closed")
         if not self.window._closing and not self._shutting_down:
-            self.window.show()
+            self._restore_control()
 
     def invalidate(self, reason):
         was_pending = self.pending
         self.pending = False
         self._generation += 1
         self.gaze.clear()
-        self.client.cancel()
+        self.cancel_requests()
         self.dialog.set_context(None)
         self.dialog.hide()
         self.invalidated.emit(reason)
         if was_pending:
             self._record("capture_cancelled", code=reason)
             if not self.window._closing:
-                self.window.show()
+                self._restore_control()
 
     def shutdown(self):
         self._shutting_down = True

@@ -11,10 +11,27 @@ from pathlib import Path
 import pefile
 
 ROOT = Path(__file__).resolve().parents[1]
+SSL_AUXILIARY_SHA256 = "c916ce1b14ed8ca69e9b5c9fab22799a900dd610d6d4ec9b1347f4fd48e53718"
 FFMPEG = re.compile(
     r"^(avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale)-(\d+)(?:-[a-f0-9]+)?\.dll$",
     re.I,
 )
+
+
+def ssl_runtime_data(source=None):
+    """Preserve a reviewed public distrust asset required by the build Python's SSL."""
+    import ssl
+
+    source = Path(source or ssl.__file__)
+    if "codex-rejected-cas.pem" not in source.read_text("utf-8"):
+        return []  # Ordinary CPython needs no additional asset.
+    asset = source.with_name("codex-rejected-cas.pem")
+    if (
+        not asset.is_file()
+        or hashlib.sha256(asset.read_bytes()).hexdigest() != SSL_AUXILIARY_SHA256
+    ):
+        raise RuntimeError("SSL auxiliary public certificate is missing or unreviewed")
+    return [(str(asset), ".")]
 
 
 def microsoft_runtime(name):

@@ -2,7 +2,7 @@ Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
 !ifndef VERSION
-!define VERSION "0.4.6"
+!define VERSION "0.5.0"
 !endif
 Name "Look to Ask"
 OutFile "..\dist\LookToAsk-${VERSION}-Setup.exe"

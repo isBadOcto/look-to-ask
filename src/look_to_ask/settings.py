@@ -26,6 +26,9 @@ class AppSettings:
     language: str = "zh"
     ui_language: str = "system"
     remember_key: bool = False
+    destination: str = "api"
+    codex_thread: str = ""
+    codex_executable: str = ""
 
     def validate(self):
         if type(self.camera_index) is not int or not 0 <= self.camera_index <= 99:
@@ -40,9 +43,21 @@ class AppSettings:
             raise ValueError("Invalid preferences")
         if not all(
             isinstance(s, str) and len(s) <= 2000
-            for s in (self.api_base_url, self.api_model, self.speech_model)
+            for s in (
+                self.api_base_url,
+                self.api_model,
+                self.speech_model,
+                self.codex_thread,
+                self.codex_executable,
+            )
         ):
             raise ValueError("Invalid settings text")
+        if self.destination not in ("api", "codex"):
+            raise ValueError("Invalid destination")
+        if self.codex_thread:
+            from look_to_ask.codex_handoff import parse_thread_id
+
+            parse_thread_id(self.codex_thread)
         _ = ApiConfig(self.api_base_url, self.api_model or "unconfigured").endpoint
 
 
@@ -114,6 +129,31 @@ class SettingsStore:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)
 
+    def save_destination(self, destination, thread, executable):
+        """Persist destination preferences without any credential-vault operation."""
+        from look_to_ask.codex_handoff import parse_thread_id
+
+        temporary = self.path.with_suffix(".tmp")
+        try:
+            thread = parse_thread_id(thread) if thread else ""
+            settings = replace(
+                self.load(),
+                destination=destination,
+                codex_thread=thread,
+                codex_executable=executable,
+            )
+            settings.validate()
+            saved = {name: getattr(settings, name) for name in self.saved_fields}
+            saved.update(destination=destination, codex_thread=thread, codex_executable=executable)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2), "utf-8")
+            temporary.replace(self.path)
+        except (OSError, ValueError, TypeError) as exc:
+            raise SettingsError(tr("发送目标未能保存；请检查对话链接和本机设置目录。")) from exc
+        finally:
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+
     def save(self, settings, api_key):
         temporary = self.path.with_suffix(".tmp")
         try:
@@ -138,6 +178,28 @@ class SettingsStore:
             raise SettingsError(
                 tr("设置未能保存；检查本机目录权限或 Windows 凭据管理器。密钥不会写入配置文件。")
             ) from exc
+        finally:
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+
+    def save_preferences(self, settings):
+        """Save non-secret preferences while preserving the API credential binding."""
+        temporary = self.path.with_suffix(".tmp")
+        try:
+            previous = self.load()
+            settings.validate()
+            if (settings.api_base_url, settings.remember_key) != (
+                previous.api_base_url,
+                previous.remember_key,
+            ):
+                raise ValueError("Credential binding changes require explicit API save")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(
+                json.dumps(asdict(settings), ensure_ascii=False, indent=2), "utf-8"
+            )
+            temporary.replace(self.path)
+        except (OSError, ValueError, TypeError) as exc:
+            raise SettingsError(tr("发送目标未能保存；请检查对话链接和本机设置目录。")) from exc
         finally:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)

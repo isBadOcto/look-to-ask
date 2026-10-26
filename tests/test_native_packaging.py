@@ -7,6 +7,36 @@ import pytest
 from scripts.native_packaging import allowed_binary, patch_imports, stage_sklearn_loader
 
 
+def test_ssl_auxiliary_data_is_required_and_hash_checked(tmp_path, monkeypatch):
+    import hashlib
+
+    from scripts import native_packaging
+    from scripts.native_packaging import ssl_runtime_data
+
+    source = tmp_path / "ssl.py"
+    source.write_text("cafile='codex-rejected-cas.pem'", "utf-8")
+    with pytest.raises(RuntimeError, match="SSL"):
+        ssl_runtime_data(source)
+    asset = source.with_name("codex-rejected-cas.pem")
+    asset.write_text("unreviewed certificate", "ascii")
+    with pytest.raises(RuntimeError, match="SSL"):
+        ssl_runtime_data(source)
+    reviewed_fixture = b"-----BEGIN TRUSTED CERTIFICATE-----\npublic test fixture\n"
+    monkeypatch.setattr(
+        native_packaging, "SSL_AUXILIARY_SHA256", hashlib.sha256(reviewed_fixture).hexdigest()
+    )
+    asset.write_bytes(reviewed_fixture)
+    assert ssl_runtime_data(source) == [(str(asset), ".")]
+
+
+def test_unmodified_python_does_not_require_codex_ssl_asset(tmp_path):
+    from scripts.native_packaging import ssl_runtime_data
+
+    source = tmp_path / "ssl.py"
+    source.write_text("# ordinary CPython SSL module", "utf-8")
+    assert ssl_runtime_data(source) == []
+
+
 @pytest.mark.parametrize(
     "name",
     [

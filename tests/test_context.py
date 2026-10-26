@@ -135,7 +135,8 @@ def test_capture_adapter_checks_pixmap_dpr_without_grabbing_real_desktop(monkeyp
             assert window == 0
             return pixmap
 
-    monkeypatch.setattr(context.QGuiApplication, "primaryScreen", lambda: Screen())
+    primary = Screen()
+    monkeypatch.setattr(context.QGuiApplication, "primaryScreen", lambda: primary)
     if valid:
         snapshot = context.capture_primary(ScreenRect(0, 0, 1000, 800), (500, 400))
         assert snapshot.geometry.scale == (1.5, 1.5)

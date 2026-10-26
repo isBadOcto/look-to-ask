@@ -1,6 +1,21 @@
 # Third-party notices
 
+## Optional external Codex desktop application (0.5.0)
+
+Codex desktop handoff invokes a separately installed desktop component through local
+stdio and a native wake link. Codex executables, credentials and model access are not
+bundled or copied into Look to Ask. The external application retains its own license,
+account terms and data policy. This adapter adds no Python runtime dependencies;
+`shiboken6` is already part of the pinned PySide6 distribution below.
+
 Look to Ask's original code is MIT licensed. Third-party components retain their own licenses.
+When building with the current Codex-provided CPython runtime, its SSL module requires
+the 906-byte public `codex-rejected-cas.pem` distrust record. The bundle preserves this
+record alongside the module, with SHA-256
+`c916ce1b14ed8ca69e9b5c9fab22799a900dd610d6d4ec9b1347f4fd48e53718`.
+It contains a public trusted-certificate record, no private key or account credentials;
+certificate verification remains enabled. Ordinary CPython builds need no such asset.
+
 Git contains source and build instructions, not binaries, private data or model caches. Phase 4
 produces local, unpublished Windows test artifacts. Their `_internal/LICENSES` directory contains
 installed-distribution notices and license texts extracted from pinned upstream sources.

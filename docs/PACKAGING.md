@@ -1,6 +1,6 @@
 # Windows packaging
 
-Local version: **0.4.6 x64**. Nothing is pushed or published by these scripts. Build on Windows x64
+Local version: **0.5.0 x64**. Nothing is pushed or published by these scripts. Build on Windows x64
 with Python 3.12. PyInstaller uses an onedir layout without UPX, so LGPL libraries remain replaceable.
 NSIS provides per-user installation, Start menu entries and uninstall. Microsoft Visual C++ v14 x64
 Runtime **14.51.36247 or newer** is a separate prerequisite; its own installation may require admin.
@@ -43,10 +43,10 @@ recordings, screenshots, calibration data, generated package metadata and hidden
 
 ## Deliver together
 
-- `dist/LookToAsk-0.4.6-Setup.exe`: unsigned current-user installer.
-- `dist/LookToAsk-0.4.6-Windows-x64.zip`: extract the complete folder, retaining `_internal`.
-- `dist/LookToAsk-0.4.6-Source.zip`: MIT application source, tests, dependency declarations and recipes.
-- `dist/LookToAsk-0.4.6-LibrarySources.zip`: complete corresponding Qt/PySide/FFmpeg/PyAV source
+- `dist/LookToAsk-0.5.0-Setup.exe`: unsigned current-user installer.
+- `dist/LookToAsk-0.5.0-Windows-x64.zip`: extract the complete folder, retaining `_internal`.
+- `dist/LookToAsk-0.5.0-Source.zip`: MIT application source, tests, dependency declarations and recipes.
+- `dist/LookToAsk-0.5.0-LibrarySources.zip`: complete corresponding Qt/PySide/FFmpeg/PyAV source
   archives, hashes, native build records, notices and replacement instructions.
   Also includes NumPy/OpenBLAS/GCC 10.3 libquadmath sources/producer recipe, MediaPipe's pinned
   native sources (including MPL Eigen), and tokenizers' 151 checksum-locked registry crate sources.
@@ -65,8 +65,8 @@ The older community FFmpeg build contained GPL FFTW and is excluded, regardless 
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/audit_bundle.py
-.\.venv\Scripts\python.exe tests/manual/check_frozen.py dist/LookToAsk/LookToAsk.exe .venv/frozen-0.4.6
-.\tests\manual\check_installer.ps1 -Version 0.4.6
+.\.venv\Scripts\python.exe tests/manual/check_frozen.py dist/LookToAsk/LookToAsk.exe .venv/frozen-0.5.0
+.\tests\manual\check_installer.ps1 -Version 0.5.0
 ```
 
 The real installer test refuses existing installations and uses a fresh verified workspace target.

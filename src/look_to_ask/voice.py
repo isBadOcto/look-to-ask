@@ -4,6 +4,7 @@ import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from look_to_ask.codex_handoff import CodexConfig
 from look_to_ask.i18n import tr
 from look_to_ask.speech import SPEECH_BEAM_SIZE, PushToTalkRecorder, SpeechWorker
 
@@ -37,12 +38,20 @@ class VoiceController(QObject):
         self.engine.failed.connect(self._failed)
         self.ask.context_ready.connect(self._captured)
         self.ask.capture_failed.connect(
-            lambda: self.cancel(tr("截图失败，本次语音没有发送。"), "capture_failed")
+            lambda: self.cancel(
+                self.ask.last_capture_error or tr("截图失败，本次语音没有发送。"), "capture_failed"
+            )
         )
         self.ask.invalidated.connect(lambda reason: self.cancel(tr("本次语音已取消。"), reason))
         self.ask.dialog.cancel_requested.connect(lambda: self.cancel(tr("本次语音已取消。")))
         self.ask.client.completed.connect(lambda _answer: self._finished("ok"))
         self.ask.client.failed.connect(lambda _message, code: self._finished(code))
+        self.ask.codex_client.completed.connect(lambda _queue: self._finished("codex_queued"))
+        self.ask.codex_client.failed.connect(self._codex_failed)
+
+    def _codex_failed(self, message, code):
+        self._finished(code)
+        self.status.emit(message)  # Keep an ambiguous-delivery warning visible in the tray tooltip.
 
     def prepare(self):
         if self.active or self._shutting_down:
@@ -108,7 +117,7 @@ class VoiceController(QObject):
             return self._reject(tr("程序正在退出。"), "shutting_down")
         if self.ask.pending:
             return self._reject(tr("正在获取截图，请稍后再按住说话。"), "capture_busy")
-        if self.ask.client.busy:
+        if self.ask.busy:
             return self._reject(tr("AI 请求尚未结束；请等待或先取消。"), "api_busy")
         if self.engine.busy:
             return self._reject(tr("语音引擎仍在处理，请稍后重试。"), "engine_busy")
@@ -121,12 +130,16 @@ class VoiceController(QObject):
         ):
             return self._reject(tr("请先完成校准并恢复正常跟踪。"), "not_calibrated")
         try:
-            config = self.ask.dialog.api_config()
-            _ = config.endpoint  # Validate before recording or taking a screenshot.
+            config = self.ask.dialog.destination_config()
         except ValueError as exc:
             return self._reject(str(exc), "invalid_settings")
         try:
-            point, stats = self.ask.gaze.freeze_stable(w.screen, now=time.monotonic())
+            freeze = (
+                self.ask.gaze.freeze_recent
+                if isinstance(config, CodexConfig)
+                else self.ask.gaze.freeze_stable
+            )
+            point, stats = freeze(w.screen, now=time.monotonic())
         except ValueError as exc:
             return self._reject(str(exc), "gaze_not_ready")
         if self.engine.loaded_name != self.ask.dialog.speech_model_edit.text().strip():
@@ -145,8 +158,15 @@ class VoiceController(QObject):
         self._released = self._sending = False
         self._snapshot = self._text = None
         self._config = config
-        if not self.ask.trigger(frozen_point=point, voice=True):
-            self.cancel(tr("无法获取注视上下文，本次未录音发送。"), "context_unavailable")
+        if not self.ask.trigger(
+            frozen_point=point,
+            voice=True,
+            destination="codex" if isinstance(config, CodexConfig) else "api",
+        ):
+            self.cancel(
+                self.ask.last_capture_error or tr("无法获取注视上下文，本次未录音发送。"),
+                "context_unavailable",
+            )
             return False
         self.limit.start(self.recorder.MAX_SECONDS * 1000)
         self.monitor.start()
@@ -194,6 +214,8 @@ class VoiceController(QObject):
         self._show_processing()
 
     def _show_processing(self):
+        if self.ask.background or isinstance(self._config, CodexConfig):
+            return
         if self.active and self._released and not self.ask.pending and self._snapshot is not None:
             self.ask.dialog.show()
             self.ask.dialog.set_busy(True)
@@ -221,12 +243,19 @@ class VoiceController(QObject):
             self.cancel(tr("上下文已改变，本次语音没有发送。"), "context_changed")
             return
         self.ask.dialog.question_edit.setPlainText(self._text)
-        self.ask.dialog.show()
+        if not self.ask.background and not isinstance(self._config, CodexConfig):
+            self.ask.dialog.show()
         self._sending = True
         if not self.ask._send(self._config, self._text, voice=True):
             self._finished("send_rejected")
             return
-        self.status.emit(tr("本地识别完成（{value0}），正在请求 AI…", value0=self._backend_label()))
+        if not self.active or not self._sending:
+            return  # A synchronous completion/failure already published its final status.
+        self.status.emit(
+            tr("本地识别完成，正在交给 Codex 对话…")
+            if isinstance(self._config, CodexConfig)
+            else tr("本地识别完成（{value0}），正在请求 AI…", value0=self._backend_label())
+        )
 
     def _failed(self, identity, message, code):
         if identity == 0:
@@ -250,7 +279,9 @@ class VoiceController(QObject):
         self._snapshot = self._text = self._config = None
         self.ask.dialog.set_busy(False)
         self.status.emit(
-            tr("本轮语音回答完成，可以继续按住说话。")
+            tr("已交给 Codex，可以继续提问；回答请在目标对话查看。")
+            if code == "codex_queued"
+            else tr("本轮语音回答完成，可以继续按住说话。")
             if code == "ok"
             else tr("本轮 AI 请求未完成，可重试或文字提问。")
         )

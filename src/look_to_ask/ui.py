@@ -4,10 +4,11 @@ import time
 from dataclasses import replace
 
 import cv2
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -26,6 +27,7 @@ from look_to_ask.gaze import CAMERA_RESOLUTIONS
 from look_to_ask.i18n import install_language, tr
 from look_to_ask.platform_windows import GlobalHotkeys, HoldReleaseWatcher
 from look_to_ask.settings import AppSettings, SettingsError, SettingsStore, credential_target
+from look_to_ask.tray import DesktopTray
 from look_to_ask.vision import ApiConfig
 from look_to_ask.voice import VoiceController
 from look_to_ask.worker import TrackingWorker
@@ -195,7 +197,9 @@ class ControlWindow(QWidget):
         remembered_key = ""
         try:
             effective_target = credential_target(dialog.base_url_edit.text())
-            if effective_target == credential_target(self.preferences.api_base_url):
+            if self.preferences.destination == "api" and effective_target == credential_target(
+                self.preferences.api_base_url
+            ):
                 remembered_key = self.settings_store.load_key(self.preferences)
             if effective_target == credential_target(config.base_url):
                 environment_key = config.api_key
@@ -208,6 +212,14 @@ class ControlWindow(QWidget):
             dialog.language_selector.findData(self.preferences.language)
         )
         dialog.save_settings_requested.connect(self._save_settings)
+        dialog.codex_thread_edit.setText(self.preferences.codex_thread)
+        dialog.codex_executable_edit.setText(self.preferences.codex_executable)
+        dialog.destination_selector.setCurrentIndex(
+            dialog.destination_selector.findData(self.preferences.destination)
+        )
+        self._api_key_user_edited = False
+        dialog.key_edit.textEdited.connect(self._api_key_edited)
+        dialog.destination_selector.currentIndexChanged.connect(self._destination_selected)
         self.voice = VoiceController(self)
         self.voice.engine.finished.connect(self._speech_finished)
         self.mouse_release = HoldReleaseWatcher(self)
@@ -245,9 +257,9 @@ class ControlWindow(QWidget):
         intro = QLabel(
             tr(
                 "看向屏幕内容，按住快捷键说出问题。"
-                "\n首次使用：设置 API → 选择摄像头 → 校准 → 准备语音。"
+                "\n首次使用：选择发送目标 → 选择摄像头 → 校准 → 准备语音。"
                 "\n文字提问预览后点击发送；"
-                "语音提问松开后自动发送裁剪与转写。"
+                "语音提问松开后自动发送截图与转写（Codex 模式含整张主屏）。"
                 "\n麦克风只在按住时开启，音频本地识别、不保存、不上传。"
                 "\n首次启动眼动引擎可能下载约 4 MB 的 MediaPipe 模型。"
             )
@@ -260,6 +272,8 @@ class ControlWindow(QWidget):
         self.status_label.setMinimumHeight(60)
         layout.addWidget(self.status_label)
         self.voice_status = QLabel(tr("语音尚未准备；先填写 API 设置，再准备本地模型。"))
+        if self.preferences.destination == "codex":
+            self.voice_status.setText(tr("先检查 Codex 接收对话，再准备本地语音模型。"))
         self.voice_status.setWordWrap(True)
         self.voice_status.setTextFormat(Qt.TextFormat.PlainText)
         self.voice.status.connect(self._show_voice_status)
@@ -301,7 +315,7 @@ class ControlWindow(QWidget):
         self.ask_button.setEnabled(False)
         self.ask_button.clicked.connect(self.ask.trigger)
         layout.addWidget(self.ask_button)
-        settings_button = QPushButton(tr("API / 语音设置（不截图）"))
+        settings_button = QPushButton(tr("发送目标 / API / 语音设置（不截图）"))
         settings_button.clicked.connect(self._show_settings)
         layout.addWidget(settings_button)
         self.prepare_voice_button = QPushButton(tr("准备语音模型（首次需下载，大小见设置）"))
@@ -349,6 +363,8 @@ class ControlWindow(QWidget):
         ):
             layout.removeWidget(widget)
             advanced.addWidget(widget)
+        self.marker_debug = QCheckBox(tr("Codex 模式显示注视标记（仅调试）"))
+        advanced.addWidget(self.marker_debug)
         self.advanced_panel.hide()
         toggle.toggled.connect(self.advanced_panel.setVisible)
         advanced_layout.addWidget(self.advanced_panel)
@@ -359,6 +375,12 @@ class ControlWindow(QWidget):
         exit_button = QPushButton(tr("退出"))
         exit_button.clicked.connect(self.close)
         layout.addWidget(exit_button)
+        self.minimize_button = QPushButton(tr("最小化到托盘（后台使用快捷键）"))
+        layout.addWidget(self.minimize_button)
+        self.tray = DesktopTray(self)
+        self.minimize_button.clicked.connect(self.tray.minimize)
+        if self.tray.available:
+            app.setQuitOnLastWindowClosed(False)
         self.hotkeys = GlobalHotkeys(
             app,
             self.close,
@@ -436,6 +458,27 @@ class ControlWindow(QWidget):
             self._has_calibration = False
             self._set_status(tr("摄像头已选择；点击开始校准。"))
 
+    def _api_key_edited(self, _text):
+        self._api_key_user_edited = True
+
+    def _destination_selected(self):
+        dialog = self.ask.dialog
+        if (
+            dialog.destination_selector.currentData() != "api"
+            or not dialog.remember_key.isChecked()
+            or dialog.key_edit.text()
+            or self._api_key_user_edited
+        ):
+            return
+        try:
+            saved = self.settings_store.load()
+            if credential_target(dialog.base_url_edit.text()) == credential_target(
+                saved.api_base_url
+            ):
+                dialog.key_edit.setText(self.settings_store.load_key(saved))
+        except ValueError:
+            pass  # Never restore a key against an invalid or different endpoint.
+
     def _ui_language_selected(self):
         language = self.ui_language_selector.currentData()
         try:
@@ -453,6 +496,28 @@ class ControlWindow(QWidget):
 
     def _save_settings(self):
         dialog = self.ask.dialog
+        destination = dialog.destination_selector.currentData()
+        if destination == "codex":
+            from look_to_ask.codex_handoff import parse_thread_id
+
+            try:
+                settings = replace(
+                    self.settings_store.load(),
+                    camera_index=self.camera_index,
+                    camera_resolution=tuple(self.resolution_selector.currentData()),
+                    speech_model=dialog.speech_model_edit.text().strip(),
+                    language=dialog.language_selector.currentData(),
+                    ui_language=self.ui_language_selector.currentData(),
+                    destination="codex",
+                    codex_thread=parse_thread_id(dialog.codex_thread_edit.text()),
+                    codex_executable=dialog.codex_executable_edit.text().strip(),
+                )
+                self.settings_store.save_preferences(settings)
+                self.preferences = settings
+                dialog.status_label.setText(tr("Codex 目标和语音设置已保存；API 密钥未改动。"))
+            except (ValueError, SettingsError) as exc:
+                dialog.status_label.setText(str(exc))
+            return
         settings = AppSettings(
             camera_index=self.camera_index,
             camera_resolution=tuple(self.resolution_selector.currentData()),
@@ -462,6 +527,9 @@ class ControlWindow(QWidget):
             language=dialog.language_selector.currentData(),
             ui_language=self.ui_language_selector.currentData(),
             remember_key=dialog.remember_key.isChecked(),
+            destination=destination,
+            codex_thread=dialog.codex_thread_edit.text().strip(),
+            codex_executable=dialog.codex_executable_edit.text().strip(),
         )
         try:
             self.settings_store.save(settings, dialog.key_edit.text())
@@ -626,7 +694,10 @@ class ControlWindow(QWidget):
 
     def _on_gaze(self, x, y, timestamp):
         self.ask.gaze.update(x, y, timestamp)
-        if not self.ask.suppress_marker:
+        if not self.ask.suppress_marker and (
+            self.ask.dialog.destination_selector.currentData() != "codex"
+            or self.marker_debug.isChecked()
+        ):
             self.marker.update_gaze(x, y, timestamp)
 
     def _on_lost(self):
@@ -637,6 +708,9 @@ class ControlWindow(QWidget):
         if not self._closing:
             self.status_label.setText(message)
             self.calibration.set_status(message)
+            tray = getattr(self, "tray", None)
+            if tray is not None:
+                tray.set_status(message)
 
     def _calibration_finished(self):
         self.camera_selector.setEnabled(False)
@@ -726,6 +800,16 @@ class ControlWindow(QWidget):
         if self.worker is None:
             self.close()
 
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if (
+            event.type() == QEvent.Type.WindowStateChange
+            and self.isMinimized()
+            and not self._closing
+            and hasattr(self, "tray")
+        ):
+            QTimer.singleShot(0, self.tray.minimize)
+
     def closeEvent(self, event):
         self._closing = True
         self._hotkey_test_pending = False
@@ -740,11 +824,17 @@ class ControlWindow(QWidget):
             event.ignore()
             return
         if self.voice.engine.isRunning():
-            self.show()
-            self.status_label.setText(tr("麦克风已关闭；等待本地语音任务结束后安全退出…"))
+            if not self.tray.background:
+                self.show()
+            message = tr("麦克风已关闭；等待本地语音任务结束后安全退出…")
+            self.status_label.setText(message)
+            self.tray.set_status(message)
             event.ignore()
             return
         self.hotkeys.close()
         self.marker.close()
         self.calibration.hide()
+        self.tray.shutdown()
         event.accept()
+        if self.tray.available:
+            QApplication.instance().quit()

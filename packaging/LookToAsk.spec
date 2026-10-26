@@ -6,8 +6,9 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dyn
 
 root = Path(SPECPATH).parent
 sys.path.insert(0, str(root))
-from scripts.native_packaging import allowed_binary, apply_native_policy, stage_sklearn_loader
+from scripts.native_packaging import allowed_binary, apply_native_policy, stage_sklearn_loader, ssl_runtime_data
 data, binaries, hidden = [], [], []
+data += ssl_runtime_data()
 for package in ('mediapipe', 'cv2_enumerate_cameras'):
     d, b, h = collect_all(package)
     data += d
@@ -22,7 +23,7 @@ for name in ('mediapipe', 'numpy', 'opencv-contrib-python', 'PySide6-Essentials'
     data += copy_metadata(name)
 data += [(str(root / 'build' / 'LICENSES'), 'LICENSES')]
 data += [(str(root / 'LICENSE'), '.'), (str(root / 'README.md'), '.'), (str(root / 'THIRD_PARTY_NOTICES.md'), '.')]
-data += [(str(root / 'docs' / name), 'docs') for name in ('PRODUCT.zh.md', 'PACKAGING.md', 'DEPENDENCIES.md', 'TESTING.md', 'SPEECH.zh.md', 'TRANSLATIONS.md', 'RELINKING.md', 'LICENSE-AUDIT.zh.md')]
+data += [(str(root / 'docs' / name), 'docs') for name in ('PRODUCT.zh.md', 'CODEX-HANDOFF.zh.md', 'PACKAGING.md', 'DEPENDENCIES.md', 'TESTING.md', 'SPEECH.zh.md', 'TRANSLATIONS.md', 'RELINKING.md', 'LICENSE-AUDIT.zh.md')]
 data += [(str(root / 'scripts/install_speech_gpu.ps1'), 'tools')]
 data += [(str(root / 'tests/manual/targets.html'), 'demo')]
 a = Analysis(

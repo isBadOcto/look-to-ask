@@ -14,6 +14,9 @@ from look_to_ask.i18n import tr
 
 
 def check_dependencies():
+    import ssl
+
+    ssl.create_default_context()  # Exercise runtime data, not just the _ssl import.
     print(f"Python {sys.version.split()[0]} · {sys.platform}")
     from look_to_ask._vendor.eyetrax import __version__ as eye_version
 
