@@ -6,6 +6,12 @@ An open-source Windows desktop MVP that combines webcam gaze tracking, an explic
 
 Current local version: **0.5.0**. Interface languages: **English and Simplified Chinese**. EyeTrax is the sole gaze backend. The owner has exercised the core workflows and GPU speech experience. Webcam accuracy still depends on the person and setup; automated tests do not prove human accuracy or AI answer correctness.
 
+## Demo
+
+[![Watch the Look to Ask demo on YouTube](https://i.ytimg.com/vi/1-aavihZx8s/hqdefault.jpg)](https://www.youtube.com/watch?v=1-aavihZx8s)
+
+[Watch the 1-minute demo on YouTube](https://www.youtube.com/watch?v=1-aavihZx8s).
+
 ## Install
 
 This repository currently provides source code. To run it now, follow [Develop and build](#develop-and-build) from a source checkout. The artifact names below refer to local builds, not published download links.
